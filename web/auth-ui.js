@@ -1,0 +1,19 @@
+'use strict';
+let loginErrorKey='',guestStatusKey='';
+let language='ru';try{language=localStorage.getItem('qadamx.language')==='kk'?'kk':'ru'}catch{}
+const tr=(ru,kk)=>language==='kk'?(window.QStrings?.[ru]??kk??ru):ru;
+function applyLanguage(){document.documentElement.lang=language;document.querySelectorAll('[data-ru]').forEach(e=>e.textContent=language==='kk'?(window.QStrings?.[e.dataset.ru]??e.dataset.kk):e.dataset.ru);document.querySelector('[data-language]').textContent=language==='ru'?'ҚАЗ':'РУС';const box=document.querySelector('#request-body');if(box)box.placeholder=tr('Например: тестовый запрос для демонстрации','Мысалы: демонстрацияға арналған сынақ өтініш');const show=document.querySelector('#show-password');if(show)show.textContent=document.querySelector('#password').type==='text'?tr('Скрыть','Жасыру'):tr('Показать','Көрсету');document.title=document.body.dataset.page==='login'?tr('Вход в кабинет')+' · QadamX MedTech':document.body.dataset.page==='welcome'?tr('QadamX MedTech · Добро пожаловать'):tr('Пациент · QadamX MedTech');if(document.querySelector('#guest-history'))renderGuest();const error=document.querySelector('#login-error');if(error)error.textContent=loginErrorKey?tr(loginErrorKey):'';const status=document.querySelector('#guest-status');if(status)status.textContent=guestStatusKey?tr(guestStatusKey):'';}
+document.querySelector('[data-language]').addEventListener('click',()=>{language=language==='ru'?'kk':'ru';try{localStorage.setItem('qadamx.language',language)}catch{}applyLanguage();});
+document.querySelector('#show-password')?.addEventListener('click',e=>{const input=document.querySelector('#password'),show=input.type==='password';input.type=show?'text':'password';e.target.setAttribute('aria-pressed',String(show));e.target.textContent=show?tr('Скрыть','Жасыру'):tr('Показать','Көрсету');});
+document.querySelector('#login-form')?.addEventListener('submit',async e=>{
+ e.preventDefault();const btn=document.querySelector('#login-submit'),error=document.querySelector('#login-error');btn.disabled=true;loginErrorKey='';error.textContent='';
+ try{const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:document.querySelector('#login').value.trim(),password:document.querySelector('#password').value}),credentials:'same-origin'});
+  if(res.ok){document.querySelector('#password').value='';location.assign('/workspace/');return;}
+  loginErrorKey=res.status===429?'Слишком много попыток. Повторите через 15 минут.':res.status===401?'Неверный логин или пароль.':'Сервис входа временно недоступен.';error.textContent=tr(loginErrorKey);
+ }catch{loginErrorKey='Не удалось связаться с сервером. Проверьте подключение.';error.textContent=tr(loginErrorKey);}finally{btn.disabled=false;}
+});
+const guestKey='qadamx.guest.requests.v2';
+function guestRows(){try{const data=JSON.parse(sessionStorage.getItem(guestKey)||'[]');return Array.isArray(data)?data:[]}catch{return []}}
+const types={referral:['Запрос направления','Жолдама сұрау'],study:['Справка для учёбы','Оқуға арналған анықтама'],abroad:['Документы для учёбы за рубежом','Шетелде оқуға арналған құжаттар']};
+function renderGuest(){const area=document.querySelector('#guest-history');area.replaceChildren();const rows=guestRows();if(!rows.length){const p=document.createElement('p');p.textContent=tr('Пока нет запросов.','Әзірге өтініш жоқ.');area.append(p);}for(const r of rows){const item=document.createElement('div');item.className='history-item';const title=document.createElement('strong');title.textContent=tr(...(types[r.type]||types.referral));const sub=document.createElement('small');sub.textContent=r.id+' · '+tr('Демо · только в этой вкладке','Демо · тек осы қойындыда');const body=document.createElement('p');body.textContent=r.body;item.append(title,sub,body);area.append(item);}}
+applyLanguage();

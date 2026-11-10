@@ -1,0 +1,115 @@
+{
+  "archive": "clinical_visit_note_summarization_corpus-main.zip",
+  "archiveSha256": "38bdd6c898f74c0f86605be8a406cdec2bc763dc3f31cefc763bc97c8cd459d4",
+  "total": 1908,
+  "uniqueIds": 1908,
+  "files": [
+    {
+      "dataset": "ACI-BENCH",
+      "split": "train",
+      "count": 67,
+      "file": "data/aci-bench/challenge_data/train.csv",
+      "sha256": "6c778d4ac5e6cc6f1964786f9286e8d765c210f22ed6b57f83aff8497409cea4",
+      "empty": 0
+    },
+    {
+      "dataset": "ACI-BENCH",
+      "split": "validation",
+      "count": 20,
+      "file": "data/aci-bench/challenge_data/valid.csv",
+      "sha256": "6629e89e3fb409d2b3eceab60dc7b32fe1d3fb8d4e07795039284965522aa4d0",
+      "empty": 0
+    },
+    {
+      "dataset": "ACI-BENCH",
+      "split": "test1",
+      "count": 40,
+      "file": "data/aci-bench/challenge_data/clinicalnlp_taskB_test1.csv",
+      "sha256": "5cc4008e68545f84913744a8e493a58bdf17ba7e1b7a0be46d6943d6bfca9471",
+      "empty": 0
+    },
+    {
+      "dataset": "ACI-BENCH",
+      "split": "test2",
+      "count": 40,
+      "file": "data/aci-bench/challenge_data/clinicalnlp_taskC_test2.csv",
+      "sha256": "599e3330a14e25a0e056aee1365ffac7ebe50058f15821eae42a5513c2bb5a4f",
+      "empty": 0
+    },
+    {
+      "dataset": "ACI-BENCH",
+      "split": "test3",
+      "count": 40,
+      "file": "data/aci-bench/challenge_data/clef_taskC_test3.csv",
+      "sha256": "d3c18362a42124ea2bd1b2b4b66ba76a11bb123dfdb416471ae3b5924d1428ec",
+      "empty": 0
+    },
+    {
+      "dataset": "MTS-Dialog",
+      "split": "train",
+      "count": 1201,
+      "file": "data/mts-dialog/MTS_Dataset_TrainingSet.csv",
+      "sha256": "195e66419b0eb71aa8d0d963899c2b3ab333be948a0924a59c0f8f432cd9bd44",
+      "empty": 0
+    },
+    {
+      "dataset": "MTS-Dialog",
+      "split": "validation",
+      "count": 100,
+      "file": "data/mts-dialog/MTS_Dataset_ValidationSet.csv",
+      "sha256": "227206520c4534381c0d7fba6d3f09319a9af5a6d9603a93c0341af1198e3958",
+      "empty": 0
+    },
+    {
+      "dataset": "MTS-Dialog",
+      "split": "test1",
+      "count": 200,
+      "file": "data/mts-dialog/MTS_Dataset_Final_200_TestSet_1.csv",
+      "sha256": "5a5d0ea5989a4c6bcd2b03a85c1114c7bf0bf06f8bbc1226a9478164740da083",
+      "empty": 0
+    },
+    {
+      "dataset": "MTS-Dialog",
+      "split": "test2",
+      "count": 200,
+      "file": "data/mts-dialog/MTS_Dataset_Final_200_TestSet_2.csv",
+      "sha256": "226644466ed3af82382b327a3e684aab70aa605b96cfd93b04f584f1826ab1a6",
+      "empty": 0
+    }
+  ],
+  "duplicateDialogueGroups": [
+    [
+      "MTS-Dialog/train/56",
+      "MTS-Dialog/validation/58"
+    ],
+    [
+      "MTS-Dialog/train/256",
+      "MTS-Dialog/train/1109"
+    ],
+    [
+      "MTS-Dialog/train/284",
+      "MTS-Dialog/validation/4"
+    ],
+    [
+      "MTS-Dialog/train/901",
+      "MTS-Dialog/train/989",
+      "MTS-Dialog/test2/59",
+      "MTS-Dialog/test2/153"
+    ],
+    [
+      "MTS-Dialog/train/926",
+      "MTS-Dialog/test1/106"
+    ]
+  ],
+  "audioFiles": [],
+  "provenance": "Synthetic clinical encounters, per source README. English text. No QadamX patients or sales.",
+  "publicSelection": "Train splits only. Validation and test held locally outside dist.",
+  "evaluationExcludedIds": [
+    "MTS-Dialog/validation/4",
+    "MTS-Dialog/validation/58",
+    "MTS-Dialog/test1/106",
+    "MTS-Dialog/test2/59",
+    "MTS-Dialog/test2/153"
+  ],
+  "cleanHeldOutCount": 635
+}

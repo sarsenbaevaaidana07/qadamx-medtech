@@ -1,0 +1,16 @@
+{
+  "name": "qadamx-medtech",
+  "private": true,
+  "version": "0.4.0",
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "build": "node scripts/build.mjs",
+    "test:data": "node scripts/data-tests.mjs",
+    "test": "node tests.cjs && node scripts/auth-tests.mjs && node scripts/workspace-tests.cjs && node scripts/data-tests.mjs",
+    "preview": "node scripts/preview.mjs --demo"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.10",
+    "drizzle-orm": "0.45.2"
+  }
+}
