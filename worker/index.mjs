@@ -54,7 +54,7 @@ export default {async fetch(req,env){
  if(p==='/')return asset('/welcome.html');
  if(p==='/patient'||p==='/patient/')return asset('/patient.html');
  if(p==='/login'||p==='/login/')return await identity(req,env)?redirect('/workspace/'):asset('/login.html');
- if(['/auth.css','/auth-ui.js','/guest-api.js','/i18n.js','/icon.svg','/project-brief.txt','/landing.js','/landing.css','/theme.css','/fonts.css','/qrcode.js','/avatars.js'].includes(p)||p.startsWith('/attribution/'))return asset(p);
+ if(['/auth.css','/auth-ui.js','/guest-api.js','/i18n.js','/icon.svg','/project-brief.txt','/landing.js','/landing.css','/theme.css','/fonts.css','/heart3d.js','/qrcode.js','/avatars.js'].includes(p)||p.startsWith('/attribution/'))return asset(p);
  if(p==='/robots.txt')return new Response('User-agent: *\nDisallow: /\n',{headers:{...safeHeaders,'Content-Type':'text/plain'}});
  if(p==='/workspace')return redirect('/workspace/');
  if(p.startsWith('/workspace/')){

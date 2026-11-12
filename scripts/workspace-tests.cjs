@@ -14,7 +14,7 @@ function render(role,lang='ru',storageOverrides={}){
  const local={getItem:k=>k==='qadamx.language'?lang:(storageOverrides[k]||null),setItem:()=>{}};
  const context={fetch:async()=>({ok:true,status:200,json:async()=>({documents:[],assignments:[],notifications:[],requests:[],accounts:[]})}),console,structuredClone,Set,Date,Intl,TextEncoder,setTimeout:()=>0,clearTimeout:()=>{},clearInterval:()=>{},setInterval:()=>{},location:{replace:()=>{}},localStorage:local,document:{documentElement:{},querySelector:s=>elements[s]||null,addEventListener:()=>{},title:''}};
  context.window=context;context.QADAM_SESSION={login:role,role};context.addEventListener=()=>{};context.scrollTo=()=>{};
- vm.createContext(context);for(const name of ['data.js','i18n.js','core.js','dashboards.js','app.js','integrations.js','server-client.js','server-study.js','templates.js','avatars.js','features.js'])vm.runInContext(fs.readFileSync('web/'+name,'utf8'),context,{filename:name});
+ vm.createContext(context);for(const name of ['data.js','i18n.js','core.js','dashboards.js','app.js','integrations.js','server-client.js','server-study.js','templates.js','avatars.js','features.js','heart3d.js'])vm.runInContext(fs.readFileSync('web/'+name,'utf8'),context,{filename:name});
  return {context,html:()=>elements['#app'].innerHTML};
 }
 test('Each role opens a distinct operational dashboard',()=>{const d=render('doctor').html(),s=render('student').html(),m=render('mentor').html();assert(d.includes('Продолжить приём'));assert(!s.includes('Продолжить приём'));assert(s.includes('Мои задания'));assert(m.includes('Очередь проверки'));assert(!m.includes('Начать учебный приём'));assert(!s.includes('Утвердить в демо'));assert(!d.includes('Экономика на 12 месяцев'))});
