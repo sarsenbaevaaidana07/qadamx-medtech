@@ -6,7 +6,41 @@ const dataError=(error,status=400,code='invalid_request')=>dataReply({error,code
 const dataId=()=>crypto.randomUUID();
 const dataNow=()=>new Date().toISOString();
 const dataUuid=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
-const dataAccounts=env=>JSON.parse(env.QADAMX_ACCOUNTS||'[]').filter(a=>['doctor','student','mentor'].includes(a.role));
+const DATA_ROLES=['doctor','student','mentor','admin'];
+// Staff accounts come from the runtime secret plus accounts an administrator
+// created in D1. Secret accounts win on login collisions and cannot be edited.
+async function dataAccounts(env,db=env.DB){
+ const configured=JSON.parse(env.QADAMX_ACCOUNTS||'[]').filter(a=>DATA_ROLES.includes(a.role)).map(a=>({...a,source:'config'}));
+ let stored=[];try{if(db?.prepare)stored=(await dataRows(db,'SELECT * FROM user_accounts WHERE active=1')).filter(a=>DATA_ROLES.includes(a.role)&&!configured.some(c=>c.login===a.login)).map(a=>({login:a.login,role:a.role,name:a.name,salt:a.salt,hash:a.hash,version:a.version,source:'database'}));}catch{stored=[];}
+ return [...configured,...stored];
+}
+function dataAudit(db,actor,role,action,target='',details='',at=dataNow()){return dataStatement(db,'INSERT INTO audit_log(id,actor,role,action,target,details,created_at) VALUES(?,?,?,?,?,?,?)',dataId(),actor,role,action,String(target).slice(0,200),String(details).slice(0,500),at);}
+const DATA_SCORE_KEYS=['accuracy','completeness','structure','terminology','grounding'];
+function dataFields(value){if(value===undefined||value===null)return {};if(typeof value!=='object'||Array.isArray(value))throw {status:400,code:'fields',message:'Некорректные поля шаблона.'};const out={};for(const [k,v] of Object.entries(value)){if(!/^[a-zA-Z0-9_]{1,40}$/.test(k)||typeof v!=='string'||v.length>8000)throw {status:400,code:'fields',message:'Некорректные поля шаблона.'};out[k]=v;}if(Object.keys(out).length>60||JSON.stringify(out).length>60000)throw {status:400,code:'fields',message:'Слишком много данных в шаблоне.'};return out;}
+function dataScores(value){if(value===undefined||value===null)return {};if(typeof value!=='object'||Array.isArray(value))throw {status:400,code:'scores',message:'Некорректные баллы.'};const out={};for(const [k,v] of Object.entries(value)){if(!DATA_SCORE_KEYS.includes(k)||!Number.isInteger(v)||v<1||v>5)throw {status:400,code:'scores',message:'Баллы — целые числа от 1 до 5.'};out[k]=v;}return out;}
+function dataActive(value){return Number.isInteger(value)&&value>0?Math.min(value,3600000):0;}
+const dataTemplate=v=>typeof v==='string'&&/^[a-z0-9_-]{0,40}$/.test(v)?v:'';
+// document_meta and version_meta hold template fields, mentor scores and active
+// editing time. They are written in the same batch as the document mutation.
+function dataMeta(db,documentId,mutation,{template,fields,scores,activeMs=0,approved=false},at){
+ const sets=[];const args=[];
+ if(template!==undefined){sets.push('template=excluded.template');}
+ if(fields!==undefined){sets.push('fields=excluded.fields');}
+ if(scores!==undefined){sets.push('scores=excluded.scores');}
+ sets.push('active_ms=document_meta.active_ms+excluded.active_ms','updated_at=excluded.updated_at','opened_at=COALESCE(document_meta.opened_at,excluded.opened_at)');
+ if(approved)sets.push('approved_at=excluded.approved_at');
+ return dataStatement(db,`INSERT INTO document_meta(document_id,template,fields,scores,active_ms,opened_at,approved_at,updated_at) SELECT id,?,?,?,?,?,?,? FROM documents WHERE id=? AND mutation_id=? ON CONFLICT(document_id) DO UPDATE SET ${sets.join(',')}`,template??'',JSON.stringify(fields??{}),JSON.stringify(scores??{}),activeMs,at,approved?at:null,at,documentId,mutation);
+}
+// A version carries scores only when that mutation is a mentor review.
+function dataVersionMeta(db,documentId,mutation,scores){return dataStatement(db,`INSERT OR REPLACE INTO version_meta(document_id,revision,fields,scores,active_ms) SELECT d.id,d.revision,COALESCE(m.fields,'{}'),${scores?'COALESCE(m.scores,\'{}\')':'\'{}\''},COALESCE(m.active_ms,0) FROM documents d LEFT JOIN document_meta m ON m.document_id=d.id WHERE d.id=? AND d.mutation_id=?`,documentId,mutation);}
+const dataJson=(v,f)=>{try{const x=JSON.parse(v||'');return x&&typeof x==='object'?x:f}catch{return f}};
+async function dataWithMeta(db,rows){
+ const docs=rows.map(dataDocument);if(!docs.length)return docs;
+ const meta=await dataRows(db,'SELECT * FROM document_meta WHERE document_id IN (SELECT value FROM json_each(?))',JSON.stringify(docs.map(d=>d.id)));
+ const byId=Object.fromEntries(meta.map(m=>[m.document_id,m]));
+ return docs.map(d=>{const m=byId[d.id];return {...d,template:m?.template||'',fields:dataJson(m?.fields,{}),scores:dataJson(m?.scores,{}),activeMs:m?.active_ms||0,openedAt:m?.opened_at||null,approvedAt:m?.approved_at||null};});
+}
+async function dataOne(db,id){return (await dataWithMeta(db,[await dataFirst(db,'SELECT * FROM documents WHERE id=?',id)]))[0];}
 const dataStatement=(db,sql,...args)=>db.prepare(sql).bind(...args);
 const dataFirst=(db,sql,...args)=>dataStatement(db,sql,...args).first();
 async function dataRows(db,sql,...args){const result=await dataStatement(db,sql,...args).all();return result.results||[];}
@@ -56,6 +90,7 @@ async function dataSaveDocument(db,user,body){
  if(!['doctor','student'].includes(user.role))return dataError('Эта роль не создаёт медицинские или учебные записи.',403,'role');
  if(typeof body.sourceId!=='string'||!DATA_SOURCE_IDS.has(body.sourceId)||typeof body.text!=='string'||!body.text.trim()||body.text.length>60000)return dataError('Проверьте источник и текст записи. Максимум 60 000 символов.',400,'document');
  const text=body.text.trim(),kind=user.role==='doctor'?'clinical':'study',now=dataNow();
+ const extra={template:body.template===undefined?undefined:dataTemplate(body.template),fields:body.fields===undefined?undefined:dataFields(body.fields),activeMs:dataActive(body.activeMs)};
  if(body.id){
   if(!dataUuid(body.id))return dataError('Некорректный идентификатор.',400,'id');
   const row=await dataFirst(db,'SELECT * FROM documents WHERE id=?',body.id);
@@ -65,18 +100,24 @@ async function dataSaveDocument(db,user,body){
   if(!['draft','returned'].includes(row.status))return dataError('Для изменения сначала верните запись к редактированию.',409,'locked');
   const mutation=dataId(),results=await db.batch([
    dataStatement(db,"UPDATE documents SET text=?,status='draft',revision=revision+1,mutation_id=?,updated_at=? WHERE id=? AND owner=? AND revision=? AND status IN ('draft','returned')",text,mutation,now,row.id,user.login,row.revision),
-   dataVersion(db,row.id,mutation,user.login,now)
+   dataVersion(db,row.id,mutation,user.login,now),
+   dataMeta(db,row.id,mutation,extra,now),
+   dataVersionMeta(db,row.id,mutation),
+   dataAudit(db,user.login,user.role,'document_saved',row.id,'revision '+(row.revision+1),now)
   ]);if(dataChanges(results[0])!==1)return dataError('Запись изменилась. Обновите страницу.',409,'conflict');
-  return dataReply({document:dataDocument(await dataFirst(db,'SELECT * FROM documents WHERE id=?',row.id))});
+  return dataReply({document:await dataOne(db,row.id)});
  }
  const existing=await dataFirst(db,'SELECT * FROM documents WHERE owner=? AND source_id=?',user.login,body.sourceId);
  if(existing)return dataReply({error:'Для этого источника уже есть ваша запись.',code:'duplicate',document:dataDocument(existing)},409);
  const id=dataId(),mutation=dataId();
  try{await db.batch([
   dataStatement(db,'INSERT INTO documents(id,owner,assigned_mentor,kind,source_id,text,status,revision,comment,mutation_id,created_at,updated_at) VALUES(?,?,NULL,?,?,?,\'draft\',1,\'\',?,?,?)',id,user.login,kind,body.sourceId,text,mutation,now,now),
-  dataVersion(db,id,mutation,user.login,now)
+  dataVersion(db,id,mutation,user.login,now),
+  dataMeta(db,id,mutation,extra,now),
+  dataVersionMeta(db,id,mutation),
+  dataAudit(db,user.login,user.role,'document_created',id,body.sourceId,now)
  ])}catch(error){const duplicate=await dataFirst(db,'SELECT * FROM documents WHERE owner=? AND source_id=?',user.login,body.sourceId);if(duplicate)return dataReply({error:'Для этого источника уже есть ваша запись.',code:'duplicate',document:dataDocument(duplicate)},409);throw error;}
- return dataReply({document:dataDocument(await dataFirst(db,'SELECT * FROM documents WHERE id=?',id))},201);
+ return dataReply({document:await dataOne(db,id)},201);
 }
 async function dataDocumentAction(db,user,id,body){
  const row=await dataFirst(db,'SELECT * FROM documents WHERE id=?',id);if(!dataCanRead(user,row))return dataError('Запись не найдена.',404,'not_found');
@@ -97,16 +138,18 @@ async function dataDocumentAction(db,user,id,body){
  const comment=typeof body.comment==='string'?body.comment.trim():'';
  if(comment.length>5000)return dataError('Комментарий слишком длинный.',400,'comment');
  if((action==='return'||action==='approve'&&!clinical)&&!comment)return dataError('Добавьте комментарий к результату проверки.',400,'comment');
+ const scores=!clinical&&user.role==='mentor'&&['approve','return'].includes(action)?dataScores(body.scores):undefined;
  const now=dataNow(),mutation=dataId();
  const sql=assignment?"UPDATE documents SET status=?,assigned_mentor=(SELECT mentor FROM assignments WHERE student=owner),comment='',revision=revision+1,mutation_id=?,updated_at=? WHERE id=? AND revision=?":"UPDATE documents SET status=?,comment=?,revision=revision+1,mutation_id=?,updated_at=? WHERE id=? AND revision=?";
  const stmts=[assignment?dataStatement(db,sql,to,mutation,now,id,row.revision):dataStatement(db,sql,to,comment||(['recall','revise'].includes(action)?row.comment:''),mutation,now,id,row.revision),dataVersion(db,id,mutation,user.login,now)];
+ stmts.push(dataMeta(db,id,mutation,{scores,activeMs:owner?dataActive(body.activeMs):0,approved:to==='approved'},now),dataVersionMeta(db,id,mutation,!!scores&&Object.keys(scores).length>0),dataAudit(db,user.login,user.role,'document_'+action,id,to,now));
  if(recipient)stmts.push(dataDocumentNotification(db,id,mutation,recipient,type,title,now));
  const results=await db.batch(stmts);if(dataChanges(results[0])!==1)return dataError('Запись изменилась. Обновите страницу.',409,'conflict');
- return dataReply({document:dataDocument(await dataFirst(db,'SELECT * FROM documents WHERE id=?',id))});
+ return dataReply({document:await dataOne(db,id)});
 }
 async function dataAssign(db,env,user,body){
  if(user.role!=='doctor')return dataError('Назначать наставников может врач.',403,'role');
- const users=dataAccounts(env);if(!users.some(a=>a.login===body.student&&a.role==='student')||!users.some(a=>a.login===body.mentor&&a.role==='mentor'))return dataError('Выберите существующего студента и наставника.',400,'assignment');
+ const users=await dataAccounts(env,db);if(!users.some(a=>a.login===body.student&&a.role==='student')||!users.some(a=>a.login===body.mentor&&a.role==='mentor'))return dataError('Выберите существующего студента и наставника.',400,'assignment');
  const existing=await dataFirst(db,'SELECT * FROM assignments WHERE student=?',body.student);if(existing?.mentor===body.mentor)return dataReply({assignment:{student:existing.student,mentor:existing.mentor,assignedBy:existing.assigned_by,updatedAt:existing.updated_at}});
  const now=dataNow(),mutation=dataId();
  await db.batch([
@@ -114,7 +157,8 @@ async function dataAssign(db,env,user,body){
   dataStatement(db,"UPDATE documents SET assigned_mentor=?,revision=revision+1,mutation_id=?,updated_at=? WHERE owner=? AND kind='study' AND assigned_mentor IS NOT NULL",body.mentor,mutation,now,body.student),
   dataStatement(db,'INSERT INTO document_versions(id,document_id,revision,text,status,comment,actor,created_at) SELECT ?||id,id,revision,text,status,comment,?,? FROM documents WHERE mutation_id=?',mutation+'-',user.login,now,mutation),
   dataNotification(db,body.student,'mentor_assigned','Вам назначен наставник',null,null,now),
-  dataNotification(db,body.mentor,'student_assigned','Вам назначен студент',null,null,now)
+  dataNotification(db,body.mentor,'student_assigned','Вам назначен студент',null,null,now),
+  dataAudit(db,user.login,user.role,'mentor_assigned',body.student,body.mentor,now)
  ]);
  return dataReply({assignment:{student:body.student,mentor:body.mentor,assignedBy:user.login,updatedAt:now}});
 }
@@ -122,11 +166,12 @@ async function dataCreateRequest(req,db,env,body){
  if(body.consent!==true||!['referral','study','abroad'].includes(body.type)||typeof body.body!=='string'||!body.body.trim()||body.body.length>2000||!dataUuid(body.clientRequestId))return dataError('Проверьте тип, комментарий и согласие на отправку.',400,'request');
  const trackingToken=await dataTracking(body.clientRequestId,env),trackingHash=await dataHash(trackingToken),existing=await dataFirst(db,'SELECT * FROM patient_requests WHERE client_request_id=?',body.clientRequestId);
  if(existing)return dataRetryResponse(existing,body,trackingToken,trackingHash);
- const doctor=dataAccounts(env).find(a=>a.role==='doctor');if(!doctor)return dataError('Получатель запроса ещё не настроен.',503,'doctor_unavailable');
+ const doctor=(await dataAccounts(env,db)).find(a=>a.role==='doctor');if(!doctor)return dataError('Получатель запроса ещё не настроен.',503,'doctor_unavailable');
  const id=dataId(),now=dataNow();
  try{await db.batch([
   dataStatement(db,'INSERT INTO patient_requests(id,client_request_id,tracking_hash,type,body,assigned_doctor,status,revision,message,created_at,updated_at) VALUES(?,?,?,?,?,?,\'new\',1,\'\',?,?)',id,body.clientRequestId,trackingHash,body.type,body.body.trim(),doctor.login,now,now),
-  dataNotification(db,doctor.login,'patient_request','Получен новый запрос пациента',null,id,now)
+  dataNotification(db,doctor.login,'patient_request','Получен новый запрос пациента',null,id,now),
+  dataAudit(db,'guest','patient','patient_request_created',id,body.type,now)
  ])}catch(error){const duplicate=await dataFirst(db,'SELECT * FROM patient_requests WHERE client_request_id=?',body.clientRequestId);if(duplicate)return dataRetryResponse(duplicate,body,trackingToken,trackingHash);throw error;}
  return dataReply({request:dataRequest(await dataFirst(db,'SELECT * FROM patient_requests WHERE id=?',id)),trackingToken},201);
 }
@@ -137,7 +182,7 @@ export async function handleData(req,env,user,url=new URL(req.url)){
  try{
   if(!env.DB?.prepare||!env.DB?.batch)return dataError('Серверная база временно недоступна.',503,'database_unavailable');
   const db=env.DB,guest=(p==='/api/requests'||p==='/api/requests/status')&&req.method==='POST';
-  if(!guest){if(!user)return dataError('Требуется вход.',401,'unauthorized');if(!dataAccounts(env).some(a=>a.login===user.login&&a.role===user.role))return dataError('Недопустимая учётная запись.',403,'account');}
+  if(!guest){if(!user)return dataError('Требуется вход.',401,'unauthorized');if(!(await dataAccounts(env,db)).some(a=>a.login===user.login&&a.role===user.role))return dataError('Недопустимая учётная запись.',403,'account');}
   if(!['GET','POST'].includes(req.method))return dataError('Метод недоступен.',405,'method');
   if(guest){
    if(req.headers.get('Origin')!==url.origin)return dataError('Недопустимый источник запроса.',403,'origin');
@@ -153,7 +198,7 @@ export async function handleData(req,env,user,url=new URL(req.url)){
   if(p==='/api/documents'){
    if(req.method==='POST')return await dataSaveDocument(db,user,body);
    const rows=user.role==='mentor'?await dataRows(db,"SELECT * FROM documents WHERE kind='study' AND assigned_mentor=? AND status IN ('review','returned','approved') ORDER BY updated_at DESC",user.login):await dataRows(db,'SELECT * FROM documents WHERE owner=? AND kind=? ORDER BY updated_at DESC',user.login,user.role==='doctor'?'clinical':'study');
-   return dataReply({documents:rows.map(dataDocument)});
+   return dataReply({documents:await dataWithMeta(db,rows)});
   }
   const documentRoute=p.match(/^\/api\/documents\/([0-9a-f-]+)\/(action|history)$/i);
   if(documentRoute){const [,id,action]=documentRoute;if(!dataUuid(id))return dataError('Запись не найдена.',404,'not_found');
@@ -161,16 +206,16 @@ export async function handleData(req,env,user,url=new URL(req.url)){
    if(action==='history'&&req.method==='GET'){
     // Authorize in the same statement that reads versions: a concurrent recall
     // or reassignment cannot expose a newly private draft to the old mentor.
-    const versions=await dataRows(db,`SELECT v.* FROM document_versions v JOIN documents d ON d.id=v.document_id WHERE d.id=? AND ((d.owner=? AND ((?='doctor' AND d.kind='clinical') OR (?='student' AND d.kind='study'))) OR (?='mentor' AND d.kind='study' AND d.assigned_mentor=? AND d.status IN ('review','returned','approved'))) ORDER BY v.revision DESC`,id,user.login,user.role,user.role,user.role,user.login);
+    const versions=await dataRows(db,`SELECT v.*,vm.fields AS meta_fields,vm.scores AS meta_scores,vm.active_ms AS meta_active FROM document_versions v JOIN documents d ON d.id=v.document_id LEFT JOIN version_meta vm ON vm.document_id=v.document_id AND vm.revision=v.revision WHERE d.id=? AND ((d.owner=? AND ((?='doctor' AND d.kind='clinical') OR (?='student' AND d.kind='study'))) OR (?='mentor' AND d.kind='study' AND d.assigned_mentor=? AND d.status IN ('review','returned','approved'))) ORDER BY v.revision DESC`,id,user.login,user.role,user.role,user.role,user.login);
     if(!versions.length)return dataError('Запись не найдена.',404,'not_found');
-    return dataReply({versions:versions.map(v=>({id:v.id,documentId:v.document_id,revision:v.revision,text:v.text,status:v.status,comment:v.comment,actor:v.actor,createdAt:v.created_at}))});
+    return dataReply({versions:versions.map(v=>({id:v.id,documentId:v.document_id,revision:v.revision,text:v.text,status:v.status,comment:v.comment,actor:v.actor,createdAt:v.created_at,fields:dataJson(v.meta_fields,{}),scores:dataJson(v.meta_scores,{}),activeMs:v.meta_active||0}))});
    }return dataError('Метод недоступен.',405,'method');
   }
   if(p==='/api/assignments'){
    if(req.method==='POST')return await dataAssign(db,env,user,body);
    const rows=user.role==='doctor'?await dataRows(db,'SELECT * FROM assignments ORDER BY student'):await dataRows(db,user.role==='mentor'?'SELECT * FROM assignments WHERE mentor=? ORDER BY student':'SELECT * FROM assignments WHERE student=?',user.login);
    const result={assignments:rows.map(a=>({student:a.student,mentor:a.mentor,assignedBy:a.assigned_by,updatedAt:a.updated_at}))};
-   if(user.role==='doctor')result.accounts=dataAccounts(env).map(({login,role,name})=>({login,role,name:name||login}));return dataReply(result);
+   if(user.role==='doctor')result.accounts=(await dataAccounts(env,db)).filter(a=>a.role!=='admin').map(({login,role,name})=>({login,role,name:name||login}));return dataReply(result);
   }
   if(p==='/api/notifications'&&req.method==='GET')return dataReply({notifications:(await dataRows(db,'SELECT * FROM notifications WHERE recipient=? ORDER BY created_at DESC,id DESC LIMIT 100',user.login)).map(n=>({id:n.id,recipient:n.recipient,type:n.type,title:n.title,documentId:n.document_id,requestId:n.request_id,readAt:n.read_at,createdAt:n.created_at}))});
   const notificationRoute=p.match(/^\/api\/notifications\/([0-9a-f-]+)\/read$/i);
@@ -189,3 +234,5 @@ export async function handleData(req,env,user,url=new URL(req.url)){
   return dataError('Маршрут не найден.',404,'not_found');
  }catch(error){if(error&&Number.isInteger(error.status))return dataError(error.message,error.status,error.code);return dataError('Не удалось выполнить операцию с серверной базой. Повторите позже.',503,'database_error');}
 }
+
+export {dataAccounts,dataAudit,dataBody,dataError,dataReply,dataRows,dataFirst,dataStatement,dataNow,dataId,dataRateLimited,dataNotification,dataJson};

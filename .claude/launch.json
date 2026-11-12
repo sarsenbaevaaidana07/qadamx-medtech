@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {"name": "qadamx-preview", "runtimeExecutable": "node", "runtimeArgs": ["scripts/preview.mjs", "--demo"], "port": 8765}
+  ]
+}

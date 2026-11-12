@@ -1,6 +1,6 @@
 (function(root){
  'use strict';
- const roles={doctor:['home','library','editor','documents','requests','assignments','notifications','integrations','sources','settings'],mentor:['home','practice','review','notifications','integrations','sources','settings'],student:['home','practice','library','editor','documents','notifications','integrations','sources','settings'],patient:['home','requests','documents','sources','settings'],admin:['home','analytics','sources','settings']};
+ const roles={doctor:['home','library','editor','documents','requests','assignments','analytics','evaluation','team','notifications','integrations','profile','sources','settings'],mentor:['home','practice','review','progress','team','notifications','integrations','profile','sources','settings'],student:['home','practice','library','editor','documents','progress','team','notifications','integrations','profile','sources','settings'],patient:['home','requests','documents','sources','settings'],admin:['home','users','audit','leads','analytics','evaluation','team','notifications','profile','sources','settings']};
  function canEdit(role){return ['doctor','student'].includes(role)}
  function transition(role,from,to){
   if(to==='review')return canEdit(role)&&['draft','returned'].includes(from);

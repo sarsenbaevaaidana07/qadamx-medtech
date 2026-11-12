@@ -58,9 +58,11 @@ await test('Anonymous global quota covers different IPs and parallel requests sh
 });
 function testWorker(){
  const context={crypto:globalThis.crypto,TextEncoder,TextDecoder,Request,Response,URL,btoa,atob,ASSETS:{}};
- const dataCode=readFileSync(new URL('../worker/data.mjs',import.meta.url),'utf8').replace('export async function handleData','async function handleData');
+ const strip=code=>code.split('\n').filter(l=>!l.startsWith('import ')&&!l.startsWith('export {')).join('\n').replace(/^export async function /gm,'async function ');
+ const dataCode=strip(readFileSync(new URL('../worker/data.mjs',import.meta.url),'utf8'));
+ const platformCode=strip(readFileSync(new URL('../worker/platform.mjs',import.meta.url),'utf8'));
  const indexCode=readFileSync(new URL('../worker/index.mjs',import.meta.url),'utf8').replace('export default','globalThis.worker =');
- vm.runInNewContext(dataCode+'\n'+indexCode,context);return context.worker;
+ vm.runInNewContext(dataCode+'\n'+platformCode+'\n'+indexCode,context);return context.worker;
 }
 await test('Login cancels oversized chunked bodies before buffering the entire payload',async()=>{
  const worker=testWorker(),isolated=createLocalD1();let reads=0,cancelled=false;
