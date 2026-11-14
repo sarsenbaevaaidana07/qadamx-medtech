@@ -23,4 +23,19 @@ test('Every reachable page renders in both languages for its role',()=>{for(cons
 test('Invalid saved data cannot crash dashboard startup',()=>{assert(render('doctor','ru',{'qadamx.research.v2.doctor':'null'}).html().includes('Кабинет врача'));assert(render('student','kk',{'qadamx.research.v2.student':'{"docs":{"bad":{"text":null}},"reviews":{"bad":{}}}'}).html().includes('Студент кабинеті'))});
 test('Language choice is shared with public login pages',()=>{const x=render('student','kk',{'qadamx.research.v2.student':'{"lang":"ru"}'});assert.equal(x.context.document.documentElement.lang,'kk')});
 test('Kazakh interface leaves original clinical dialogue untouched',()=>{const x=render('student','kk');const source=x.context.QADAM_DATA[0].dialogue;vm.runInContext("go('editor')",x.context);assert(x.html().includes('lang="en"'));assert.equal(x.context.QADAM_DATA[0].dialogue,source)});
-console.log(count+' workspace checks passed.');
+// Regression: while /api/metrics is still loading, the metrics pages must not re-render in a
+// loop (a render → load → render microtask loop froze phones before the response arrived).
+(async()=>{
+ for(const [role,page] of [['doctor','analytics'],['mentor','progress'],['student','progress']]){
+  const x=render(role);
+  x.context.fetch=async url=>String(url).includes('/api/metrics')?new Promise(()=>{}):{ok:true,status:200,json:async()=>({documents:[],assignments:[],notifications:[],requests:[],accounts:[],profiles:[]})};
+  vm.runInContext("var __renders=0;var __base=render;render=function(){if(++__renders>50)throw Error('render loop');return __base.apply(this,arguments)};",x.context);
+  vm.runInContext('go('+JSON.stringify(page)+')',x.context);
+  for(let i=0;i<5;i++)await new Promise(r=>setImmediate(r));
+  const n=vm.runInContext('__renders',x.context);
+  assert(n<10,role+' '+page+' rendered '+n+' times while loading');
+  assert(x.html().includes('Загрузка'),role+' '+page+' shows a loading state');
+ }
+ count++;console.log('PASS Metrics pages wait for data without a render loop');
+ console.log(count+' workspace checks passed.');
+})().catch(e=>{console.error(e);process.exit(1);});

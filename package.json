@@ -16,6 +16,7 @@
     "drizzle-kit": "0.31.10",
     "drizzle-orm": "0.45.2",
     "esbuild": "^0.25.10",
-    "qrcode-generator": "^1.4.4"
+    "qrcode-generator": "^1.4.4",
+    "wrangler": "^4.161.0"
   }
 }

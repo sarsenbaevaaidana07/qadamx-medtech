@@ -1,0 +1,17 @@
+// Cloudflare Workers deployment. Build first: npm run build (creates dist/server/index.js).
+// Secrets (never committed): QADAMX_ACCOUNTS, QADAMX_SESSION_SECRET, optional ANTHROPIC_API_KEY.
+{
+  "name": "qadamx-medtech",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "qadamx-medtech",
+      "database_id": "3535d094-ee7c-4aa6-bcf2-b00d4c88b2df",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "observability": { "enabled": true }
+}

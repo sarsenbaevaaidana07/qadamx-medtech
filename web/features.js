@@ -18,7 +18,13 @@ function avatar(p,size=40){return `<img class="q-avatar" src="${esc(avatarSrc(p)
 function displayName(login){const p=profileOf(login);return p.name||login;}
 async function quiet(path){try{return await api(path)}catch{return null}}
 async function loadProfiles(){const r=await quiet('/api/profiles');if(r?.profiles)state.profiles=r.profiles;}
-async function loadMetrics(){if(state.metricsBusy)return;state.metricsBusy=true;try{const r=await quiet('/api/metrics');if(r?.documents)state.metrics=r.documents;}finally{state.metricsBusy=false;}}
+// One request at a time: callers share the in-flight promise. A page that needs metrics asks
+// for them once and re-renders once (never from inside render), so a slow or failed request
+// cannot spin the page into a render → load → render loop.
+function loadMetrics(){if(state.metricsPromise)return state.metricsPromise;state.metricsError=false;state.metricsPromise=(async()=>{try{const r=await quiet('/api/metrics');if(r?.documents)state.metrics=r.documents;else state.metricsError=true;}finally{state.metricsPromise=null;}})();return state.metricsPromise;}
+function needMetrics(page){if(state.metrics||state.metricsPromise||state.metricsError)return;loadMetrics().then(()=>{if(state.page===page&&!hasUnsaved())render();});}
+function metricsPending(page){return heading(pageLabel(page),state.metricsError?TT('Не удалось загрузить данные.','Деректерді жүктеу мүмкін болмады.'):TT('Загрузка…','Жүктелуде…'))+(state.metricsError?`<button data-q="metrics-retry">${TT('Повторить','Қайталау')}</button>`:`<div class="card skeleton"></div>`);}
+document.addEventListener('click',e=>{const b=e.target.closest?.('button');if(b?.dataset.q==='metrics-retry'){state.metricsError=false;needMetrics(state.page);render();}});
 async function loadAiStatus(){const r=await quiet('/api/ai/status');state.aiStatus=r?{available:!!r.available,model:r.model}:{available:false};}
 const SCORE_KEYS=[['accuracy','Точность фактов','Фактілердің дәлдігі'],['completeness','Полнота','Толықтығы'],['structure','Структура','Құрылымы'],['terminology','Терминология','Терминология'],['grounding','Опора на источник','Дереккөзге сүйену']];
 const avgScore=s=>{const v=Object.values(s||{}).filter(Number.isInteger);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
@@ -165,7 +171,7 @@ function barList(items,unit=''){const max=Math.max(1,...items.map(i=>i.v));retur
 function scorePoints(docs){return docs.flatMap(d=>d.history.filter(h=>avgScore(h.scores)).map(h=>({at:h.at,v:avgScore(h.scores),scores:h.scores,label:(DATA.find(x=>x.id===d.sourceId)?.originalId||'')+' v'+h.revision}))).sort((a,b)=>new Date(a.at)-new Date(b.at)).map((p,i)=>({...p,short:String(i+1)}));}
 function criteriaBars(points){if(!points.length)return '';const last=points.slice(-5);return barList(SCORE_KEYS.map(([k,ru,kk])=>{const v=last.map(p=>p.scores[k]).filter(Number.isInteger);return {label:TT(ru,kk),v:v.length?v.reduce((a,b)=>a+b,0)/v.length:0};}),'');}
 // ---------- progress page ----------
-function progressPage(){if(!state.metrics){loadMetrics().then(()=>state.page==='progress'&&render());return heading(pageLabel('progress'),TT('Загрузка…','Жүктелуде…'))+`<div class="card skeleton"></div>`;}
+function progressPage(){if(!state.metrics){needMetrics('progress');return metricsPending('progress');}
  if(state.role==='student'){const pts=scorePoints(state.metrics),docs=state.metrics;
   return heading(TT('Мой прогресс','Менің үлгерімім'),TT('Средний балл наставника по каждой проверенной версии и время работы над записями.','Әр тексерілген нұсқа бойынша тәлімгердің орташа балы және жазбаларға жұмсалған уақыт.'))+statsMarkup([[docs.length,'Учебных записей','Всего'],[docs.filter(d=>d.status==='approved').length,'Зачтено','Учебный результат'],[pts.length?pts[pts.length-1].v.toFixed(1):'—','Последний балл','Из 5'],[docs.length?fmtMs(median(docs.map(d=>d.activeMs).filter(Boolean))):'—','Медиана времени','На одну запись']])+
   `<div class="dashboard-columns"><section class="card"><h2>${TT('Динамика оценок','Бағалар динамикасы')}</h2>${lineChart(pts,{label:TT('Средний балл','Орташа балл')})}</section><section class="card"><h2>${TT('Критерии (последние 5 проверок)','Критерийлер (соңғы 5 тексеру)')}</h2>${criteriaBars(pts)||empty(TT('Нет данных','Дерек жоқ'),'')}</section></div>`;}
@@ -173,7 +179,7 @@ function progressPage(){if(!state.metrics){loadMetrics().then(()=>state.page==='
  return heading(TT('Прогресс студентов','Студенттердің үлгерімі'),TT('Оценки по критериям и время работы ваших студентов.','Студенттеріңіздің критерийлер бойынша бағалары және жұмыс уақыты.'))+(Object.keys(byStudent).length?`<div class="student-progress">${Object.entries(byStudent).map(([login,docs])=>{const p=profileOf(login),pts=scorePoints(docs);return `<section class="card"><div class="card-head"><div class="inline">${avatar(p,48)}<div><h2>${esc(p.name)}</h2><small>${docs.length} ${TT('записей','жазба')} · ${docs.filter(d=>d.status==='approved').length} ${TT('зачтено','есептелді')} · ⏱ ${fmtMs(median(docs.map(d=>d.activeMs).filter(Boolean)))}</small></div></div>${pts.length?`<span class="badge blue">★ ${pts[pts.length-1].v.toFixed(1)}</span>`:''}</div>${lineChart(pts,{height:150,label:p.name})}${criteriaBars(pts)}</section>`;}).join('')}</div>`:`<section class="card">${empty(TT('Нет назначенных студентов','Тағайындалған студенттер жоқ'),TT('Врач назначает студентов в своём кабинете.','Дәрігер студенттерді өз кабинетінде тағайындайды.'))}</section>`);}
 // ---------- time analytics ----------
 const baseAnalytics=analytics;
-analytics=function(){if(!state.metrics){loadMetrics().then(()=>state.page==='analytics'&&render());return heading(pageLabel('analytics'),TT('Загрузка…','Жүктелуде…'))+`<div class="card skeleton"></div>`;}
+analytics=function(){if(!state.metrics){needMetrics('analytics');return metricsPending('analytics');}
  const docs=state.metrics,done=docs.filter(d=>d.status==='approved'&&d.activeMs),times=done.map(d=>d.activeMs),all=docs.filter(d=>d.activeMs);
  const byTpl={};for(const d of done)(byTpl[d.template||'free']??=[]).push(d.activeMs);
  const rows=docs.slice(0,30).map(d=>({label:(DATA.find(x=>x.id===d.sourceId)?.originalId||d.sourceId)+(state.role==='admin'?' · '+displayName(d.owner):''),v:d.activeMs/60000,text:fmtMs(d.activeMs)+' · '+d.revision+' '+TT('ред.','ред.')}));
@@ -246,5 +252,7 @@ go=async function(page){const from=state.page;await baseGo(page);if(page==='edit
  if(state.role==='admin'&&['home','users','audit','leads'].includes(page)){await loadAdmin();if(state.page===page)render();}
  if(page==='profile')state.profileDraft=null;};
 window.addEventListener('beforeunload',e=>{if(hasUnsavedDraft()){e.preventDefault();e.returnValue='';}});
+// Phone drawer: a tap outside the open menu closes it instead of being swallowed by the backdrop.
+document.addEventListener('click',e=>{const side=document.querySelector?.('.sidebar.open');if(!side||side.contains(e.target)||e.target.closest?.('.menu-toggle'))return;side.classList.remove('open');document.querySelector('.menu-toggle')?.setAttribute('aria-expanded','false');e.preventDefault();e.stopPropagation();},true);
 (async()=>{await loadProfiles();if(state.role==='admin')await loadAdmin();if(state.role==='student')await loadMetrics();if(!hasUnsaved())render();})();
 render();
