@@ -15,11 +15,13 @@ async function dataAccounts(env,db=env.DB){
  return [...configured,...stored];
 }
 function dataAudit(db,actor,role,action,target='',details='',at=dataNow()){return dataStatement(db,'INSERT INTO audit_log(id,actor,role,action,target,details,created_at) VALUES(?,?,?,?,?,?,?)',dataId(),actor,role,action,String(target).slice(0,200),String(details).slice(0,500),at);}
+// Only the mutation that won the revision check may emit a success event.
+function dataDocumentAudit(db,user,action,id,mutation,details,at){return dataStatement(db,'INSERT INTO audit_log(id,actor,role,action,target,details,created_at) SELECT ?,?,?,?,?,?,? FROM documents WHERE id=? AND mutation_id=?',dataId(),user.login,user.role,action,id,details,at,id,mutation);}
 const DATA_SCORE_KEYS=['accuracy','completeness','structure','terminology','grounding'];
 function dataFields(value){if(value===undefined||value===null)return {};if(typeof value!=='object'||Array.isArray(value))throw {status:400,code:'fields',message:'Некорректные поля шаблона.'};const out={};for(const [k,v] of Object.entries(value)){if(!/^[a-zA-Z0-9_]{1,40}$/.test(k)||typeof v!=='string'||v.length>8000)throw {status:400,code:'fields',message:'Некорректные поля шаблона.'};out[k]=v;}if(Object.keys(out).length>60||JSON.stringify(out).length>60000)throw {status:400,code:'fields',message:'Слишком много данных в шаблоне.'};return out;}
 function dataScores(value){if(value===undefined||value===null)return {};if(typeof value!=='object'||Array.isArray(value))throw {status:400,code:'scores',message:'Некорректные баллы.'};const out={};for(const [k,v] of Object.entries(value)){if(!DATA_SCORE_KEYS.includes(k)||!Number.isInteger(v)||v<1||v>5)throw {status:400,code:'scores',message:'Баллы — целые числа от 1 до 5.'};out[k]=v;}return out;}
 function dataActive(value){return Number.isInteger(value)&&value>0?Math.min(value,3600000):0;}
-const dataTemplate=v=>typeof v==='string'&&/^[a-z0-9_-]{0,40}$/.test(v)?v:'';
+function dataTemplate(v){if(['','free','consult','soap','discharge','referral','certificate'].includes(v))return v;throw {status:400,code:'template',message:'Неизвестный шаблон документа.'};}
 // document_meta and version_meta hold template fields, mentor scores and active
 // editing time. They are written in the same batch as the document mutation.
 function dataMeta(db,documentId,mutation,{template,fields,scores,activeMs=0,approved=false},at){
@@ -103,7 +105,7 @@ async function dataSaveDocument(db,user,body){
    dataVersion(db,row.id,mutation,user.login,now),
    dataMeta(db,row.id,mutation,extra,now),
    dataVersionMeta(db,row.id,mutation),
-   dataAudit(db,user.login,user.role,'document_saved',row.id,'revision '+(row.revision+1),now)
+   dataDocumentAudit(db,user,'document_saved',row.id,mutation,'revision '+(row.revision+1),now)
   ]);if(dataChanges(results[0])!==1)return dataError('Запись изменилась. Обновите страницу.',409,'conflict');
   return dataReply({document:await dataOne(db,row.id)});
  }
@@ -142,7 +144,7 @@ async function dataDocumentAction(db,user,id,body){
  const now=dataNow(),mutation=dataId();
  const sql=assignment?"UPDATE documents SET status=?,assigned_mentor=(SELECT mentor FROM assignments WHERE student=owner),comment='',revision=revision+1,mutation_id=?,updated_at=? WHERE id=? AND revision=?":"UPDATE documents SET status=?,comment=?,revision=revision+1,mutation_id=?,updated_at=? WHERE id=? AND revision=?";
  const stmts=[assignment?dataStatement(db,sql,to,mutation,now,id,row.revision):dataStatement(db,sql,to,comment||(['recall','revise'].includes(action)?row.comment:''),mutation,now,id,row.revision),dataVersion(db,id,mutation,user.login,now)];
- stmts.push(dataMeta(db,id,mutation,{scores,activeMs:owner?dataActive(body.activeMs):0,approved:to==='approved'},now),dataVersionMeta(db,id,mutation,!!scores&&Object.keys(scores).length>0),dataAudit(db,user.login,user.role,'document_'+action,id,to,now));
+ stmts.push(dataMeta(db,id,mutation,{scores,activeMs:owner?dataActive(body.activeMs):0,approved:to==='approved'},now),dataVersionMeta(db,id,mutation,!!scores&&Object.keys(scores).length>0),dataDocumentAudit(db,user,'document_'+action,id,mutation,to,now));
  if(recipient)stmts.push(dataDocumentNotification(db,id,mutation,recipient,type,title,now));
  const results=await db.batch(stmts);if(dataChanges(results[0])!==1)return dataError('Запись изменилась. Обновите страницу.',409,'conflict');
  return dataReply({document:await dataOne(db,id)});

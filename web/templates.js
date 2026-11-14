@@ -5,7 +5,7 @@
  const P=[
   {key:'patient_name',label:['ФИО пациента','Пациенттің аты-жөні'],type:'text',half:true,placeholder:['Учебный пациент','Оқу пациенті'],patient:true},
   {key:'birth_date',label:['Дата рождения','Туған күні'],type:'date',quarter:true,patient:true},
-  {key:'sex',label:['Пол','Жынысы'],type:'select',quarter:true,options:[['','—'],['ж','Женский / Әйел'],['м','Мужской / Ер']],patient:true},
+  {key:'sex',label:['Пол','Жынысы'],type:'select',quarter:true,options:[['','—'],['ж',['Женский','Әйел']],['м',['Мужской','Ер']]],patient:true},
   {key:'card_no',label:['№ медкарты','Медкарта №'],type:'text',quarter:true,placeholder:['Авто','Авто'],patient:true}
  ];
  const VITALS={key:'vitals',label:['Показатели','Көрсеткіштер'],type:'vitals',parts:[['bp','АД, мм рт. ст.','120/80'],['hr','ЧСС, уд/мин','72'],['temp','t°, °C','36.6'],['spo2','SpO₂, %','98'],['weight','Вес, кг','']]};
@@ -41,7 +41,7 @@
    description:['К специалисту или на обследование.','Маманға немесе тексеруге.'],
    fields:[...P,{key:'visit_date',label:['Дата','Күні'],type:'date',quarter:true,auto:'today'},
     {key:'referred_to',label:['Куда / к какому специалисту','Қайда / қандай маманға'],type:'text',half:true,placeholder:['Кардиолог, ЭКГ, УЗИ…','Кардиолог, ЭКГ, УДЗ…']},
-    {key:'urgency',label:['Срочность','Шұғылдығы'],type:'select',quarter:true,options:[['плановое','Плановое / Жоспарлы'],['срочное','Срочное / Шұғыл']]},
+    {key:'urgency',label:['Срочность','Шұғылдығы'],type:'select',quarter:true,options:[['плановое',['Плановое','Жоспарлы']],['срочное',['Срочное','Шұғыл']]]},
     {key:'reason',label:['Цель направления','Жолдау мақсаты'],type:'area',rows:3},
     {key:'diagnosis',label:['Предварительный диагноз','Алдын ала диагноз'],type:'area',rows:2,wide3:true},ICD,
     {key:'results',label:['Данные обследований','Тексеру деректері'],type:'area',rows:3}]},
@@ -54,18 +54,18 @@
     {key:'plan',label:['Рекомендации','Ұсыныстар'],type:'area',rows:2}]}
  };
  const order=['consult','soap','discharge','referral','certificate'];
- function lab(l,lang){return lang==='kk'?l[1]:l[0];}
+ function lab(l,lang){return Array.isArray(l)?(lang==='kk'?l[1]:l[0]):l;}
  function fieldList(id){return (list[id]||list.consult).fields;}
  function aiFields(id,lang){return fieldList(id).filter(f=>!['birth_date','sex','card_no','patient_name','visit_date','period_from','period_to','urgency'].includes(f.key)).flatMap(f=>f.type==='vitals'?f.parts.map(([k,l])=>({key:'vitals_'+k,label:l,hint:'number with unit only if stated'})):[{key:f.key,label:lab(f.label,'ru'),hint:f.hint?f.hint[0]:''}]);}
  const fmtDate=v=>{if(!v)return '';const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v);return m?`${m[3]}.${m[2]}.${m[1]}`:v;};
  function vitalsText(values){return VITALS.parts.map(([k,l])=>values['vitals_'+k]?`${l}: ${values['vitals_'+k]}`:'').filter(Boolean).join('; ');}
- function valueText(f,values){if(f.type==='vitals')return vitalsText(values);const v=values[f.key]||'';if(f.type==='date')return fmtDate(v);if(f.type==='select')return v;return v.trim();}
+ function valueText(f,values,lang='ru'){if(f.type==='vitals')return vitalsText(values);const v=values[f.key]||'';if(f.type==='date')return fmtDate(v);if(f.type==='select')return lab(f.options.find(([key])=>key===v)?.[1]??v,lang);return v.trim();}
  // Plain text is what the server stores and the mentor reads; it stays readable without the form.
  function toText(id,values,lang='ru'){
   const tpl=list[id]||list.consult,lines=[lab(tpl.doc,lang),''];
-  const pat=tpl.fields.filter(f=>f.patient).map(f=>[lab(f.label,lang),valueText(f,values)]).filter(([,v])=>v);
+  const pat=tpl.fields.filter(f=>f.patient).map(f=>[lab(f.label,lang),valueText(f,values,lang)]).filter(([,v])=>v);
   if(pat.length)lines.push(...pat.map(([l,v])=>`${l}: ${v}`),'');
-  for(const f of tpl.fields.filter(f=>!f.patient)){const v=valueText(f,values);if(!v)continue;if(f.type==='area')lines.push(lab(f.label,lang).toUpperCase(),v,'');else lines.push(`${lab(f.label,lang)}: ${v}`);}
+  for(const f of tpl.fields.filter(f=>!f.patient)){const v=valueText(f,values,lang);if(!v)continue;if(f.type==='area')lines.push(lab(f.label,lang).toUpperCase(),v,'');else lines.push(`${lab(f.label,lang)}: ${v}`);}
   return lines.join('\n').trim();
  }
  function filled(id,values){const fs=fieldList(id).filter(f=>!f.patient&&f.type==='area');return {done:fs.filter(f=>(values[f.key]||'').trim()).length,total:fs.length};}
@@ -76,12 +76,12 @@
  function printHtml(id,values,ctx){
   const lang=ctx.lang||'ru',tpl=list[id]||list.consult,L=(ru,kk)=>lang==='kk'?kk:ru;
   const pat=tpl.fields.filter(f=>f.patient);
-  const body=tpl.fields.filter(f=>!f.patient).map(f=>{const v=valueText(f,values);if(!v)return '';return f.type==='area'?`<section class="pd-section"><h3>${e(lab(f.label,lang))}</h3>${para(v)}</section>`:`<div class="pd-line"><span>${e(lab(f.label,lang))}</span><strong>${e(v)}</strong></div>`;}).join('');
+  const body=tpl.fields.filter(f=>!f.patient).map(f=>{const v=valueText(f,values,lang);if(!v)return '';return f.type==='area'?`<section class="pd-section"><h3>${e(lab(f.label,lang))}</h3>${para(v)}</section>`:`<div class="pd-line"><span>${e(lab(f.label,lang))}</span><strong>${e(v)}</strong></div>`;}).join('');
   return `<article class="print-doc">
 <div class="pd-watermark">${L('УЧЕБНЫЙ ДОКУМЕНТ','ОҚУ ҚҰЖАТЫ')}</div>
 <header class="pd-head"><div class="pd-org"><div class="pd-logo">Q</div><div><strong>QadamX MedTech</strong><span>${L('Учебная клиника · исследовательский прототип','Оқу клиникасы · зерттеу прототипі')}</span></div></div><div class="pd-meta"><span>№ ${e(ctx.number||'—')}</span><span>${e(fmtDate(values.visit_date||values.period_to||new Date().toISOString().slice(0,10)))}</span></div></header>
 <h1 class="pd-title">${e(lab(tpl.doc,lang))}</h1>
-<table class="pd-patient"><tbody>${pat.map(f=>`<tr><th>${e(lab(f.label,lang))}</th><td>${e(valueText(f,values)||'—')}</td></tr>`).join('')}</tbody></table>
+<table class="pd-patient"><tbody>${pat.map(f=>`<tr><th>${e(lab(f.label,lang))}</th><td>${e(valueText(f,values,lang)||'—')}</td></tr>`).join('')}</tbody></table>
 <div class="pd-body">${body||`<p class="pd-empty">${L('Поля документа не заполнены.','Құжат өрістері толтырылмаған.')}</p>`}</div>
 <footer class="pd-sign"><div><span>${L('Врач','Дәрігер')}</span><strong>${e(ctx.doctor||'')}</strong>${ctx.specialty?`<small>${e(ctx.specialty)}</small>`:''}</div><div class="pd-signline"><span></span><small>${L('подпись','қолы')}</small></div><div class="pd-stamp">${ctx.status==='approved'?L('Утверждено в демо','Демода бекітілді')+'<br>'+e(ctx.approvedAt||''):L('Черновик','Жоба')}</div></footer>
 <p class="pd-foot">${L('Учебный документ QadamX на синтетических данных. Не является медицинским документом, не имеет юридической силы, ЭЦП отсутствует.','QadamX оқу құжаты синтетикалық деректерде жасалған. Медициналық құжат емес, заңды күші жоқ, ЭЦҚ жоқ.')}${ctx.caseId?' · '+e(ctx.caseId):''}</p>

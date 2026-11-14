@@ -6,7 +6,7 @@
     "db:generate": "drizzle-kit generate",
     "build": "node scripts/build.mjs",
     "test:data": "node scripts/data-tests.mjs",
-    "test": "node tests.cjs && node scripts/auth-tests.mjs && node scripts/workspace-tests.cjs && node scripts/data-tests.mjs && node scripts/platform-tests.mjs",
+    "test": "node tests.cjs && node scripts/auth-tests.mjs && node scripts/workspace-tests.cjs && node scripts/data-tests.mjs && node scripts/platform-tests.mjs && node scripts/review-ui-tests.cjs && node scripts/review-server-tests.mjs && node scripts/ai-tests.mjs",
     "preview": "node scripts/preview.mjs --demo",
     "evaluate": "node scripts/evaluate.mjs"
   },
@@ -18,5 +18,10 @@
     "esbuild": "^0.25.10",
     "qrcode-generator": "^1.4.4",
     "wrangler": "^4.161.0"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "$esbuild"
+    }
   }
 }

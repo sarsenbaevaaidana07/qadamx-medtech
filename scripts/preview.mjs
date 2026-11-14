@@ -3,6 +3,7 @@ import readline from 'node:readline';
 import {readFile} from 'node:fs/promises';
 import {randomBytes,pbkdf2Sync} from 'node:crypto';
 import {mkdirSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 import {createLocalD1} from './sqlite-d1.mjs';
 const code=await readFile(new URL('../dist/server/index.js',import.meta.url),'utf8');
 const {default:worker}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
@@ -20,7 +21,7 @@ if(process.argv.includes('--demo')){
  rl.close();
 }
 mkdirSync(new URL('../.local-data/',import.meta.url),{recursive:true});
-config.DB=createLocalD1(new URL('../.local-data/preview.sqlite',import.meta.url).pathname.replace(/^\/(\w:)/,'$1'));
+config.DB=createLocalD1(fileURLToPath(new URL('../.local-data/preview.sqlite',import.meta.url)));
 if(process.argv.includes('--demo')){
  const seed=[['doctor','Айгерим Сейткали','врач-терапевт высшей категории','Терапия, кардиология','12 лет амбулаторной практики. Ведёт учебные приёмы и назначает наставников.'],['mentor','Ерлан Тулеуов','к.м.н., доцент','Внутренние болезни','Проверяет точность записей: числа, отрицания и опору на источник.'],['mentor2','Динара Ахметова','врач-педиатр, клинический наставник','Педиатрия','Учит структурировать жалобы и анамнез по SOAP.'],['mentor3','Сергей Ким','врач общей практики','Семейная медицина','Помогает формулировать рекомендации и план понятным языком.']];
  const now=new Date().toISOString();for(const [login,name,title,specialty,bio] of seed)config.DB.raw.prepare("INSERT OR IGNORE INTO profiles(login,name,title,specialty,bio,photo,updated_at) VALUES(?,?,?,?,?,'',?)").run(login,name,title,specialty,bio,now);

@@ -12,7 +12,7 @@
 [**Открыть сайт**](https://qadamx-medtech.zerdeliportald.workers.dev) · [Презентация (HTML)](pitch/QadamX-pitch.html) · [Запуск локально](#запуск-локально)
 
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-1d6fe0)
-![Тесты](https://img.shields.io/badge/тесты-74%20пройдено-14a3b8)
+![Тесты](https://img.shields.io/badge/тесты-92%20пройдено-14a3b8)
 ![Языки](https://img.shields.io/badge/языки-қазақша%20%7C%20русский-1d6fe0)
 ![Данные](https://img.shields.io/badge/данные-только%20синтетика-0f766e)
 
@@ -160,6 +160,8 @@ npx wrangler d1 migrations apply DB --remote
 npx wrangler deploy
 ```
 
+После обновления защиты сессий пользователям потребуется один раз войти заново. Дальнейшее изменение пароля или роли отзывает старые сессии, в том числе для аккаунтов из `QADAMX_ACCOUNTS`.
+
 Секреты задаются через `wrangler secret put`:
 
 | Секрет | Зачем |
@@ -196,4 +198,4 @@ npx wrangler deploy
 python prepare_data.py /path/to/clinical_visit_note_summarization_corpus-main.zip
 ```
 
-[Подробности конфигурации](README.txt) · [Отчёт о проверках](QA-REPORT.txt)
+[Архив инструкции v4](README.txt) · [Отчёт о проверках](QA-REPORT.txt)

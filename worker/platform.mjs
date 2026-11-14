@@ -34,7 +34,8 @@ async function platformAi(env,user,body,db,req){
  const lines=Array.isArray(body.lines)?body.lines.filter(l=>typeof l==='string').slice(0,400).map(l=>l.slice(0,2000)):[];
  const fields=Array.isArray(body.fields)?body.fields.filter(f=>f&&/^[a-zA-Z0-9_]{1,40}$/.test(f.key)&&typeof f.label==='string').slice(0,40).map(f=>({key:f.key,label:f.label.slice(0,120),hint:typeof f.hint==='string'?f.hint.slice(0,300):''})):[];
  if(!lines.length||!fields.length||JSON.stringify(lines).length>120000)return dataError('Нет диалога или полей шаблона.',400,'ai_input');
- const language=body.language==='kk'?'kk':'ru';
+ const language=body.language??'ru';
+ if(!['ru','kk','en'].includes(language))return dataError('Неподдерживаемый язык AI. Выберите русский, казахский или английский.',400,'ai_language');
  try{
   const result=await QadamAI.draft({apiKey:env.ANTHROPIC_API_KEY,lines,fields,language});
   await dataAudit(db,user.login,user.role,'ai_draft',typeof body.sourceId==='string'?body.sourceId.slice(0,80):'',result.model).run();

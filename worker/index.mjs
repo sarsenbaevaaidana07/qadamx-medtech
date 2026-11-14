@@ -18,13 +18,18 @@ const hex=b=>Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).joi
 function equal(a,b){if(a.length!==b.length)return false;let n=0;for(let i=0;i<a.length;i++)n|=a.charCodeAt(i)^b.charCodeAt(i);return n===0;}
 async function accounts(env){const a=JSON.parse(env.QADAMX_ACCOUNTS||'[]');if(!Array.isArray(a)||!a.length||!env.QADAMX_SESSION_SECRET)throw new Error('Authentication not configured');return dataAccounts(env,env.DB);}
 async function hmacKey(env){return crypto.subtle.importKey('raw',encoder.encode(env.QADAMX_SESSION_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);}
-async function tokenFor(user,env){const p=b64(encoder.encode(JSON.stringify({sub:user.login,ver:user.version,exp:Math.floor(Date.now()/1000)+TTL,nonce:crypto.randomUUID()})));return p+'.'+b64(await crypto.subtle.sign('HMAC',await hmacKey(env),encoder.encode(p)));}
+// Bind sessions to credentials and privileges, even if a configuration editor
+// forgets to increment version. The keyed tag never exposes the password hash.
+async function credentialTag(user,env){return b64(await crypto.subtle.sign('HMAC',await hmacKey(env),encoder.encode(JSON.stringify(['credentials-v1',user.login,user.source,user.role,user.version,user.salt,user.hash]))));}
+async function tokenFor(user,env){const p=b64(encoder.encode(JSON.stringify({sub:user.login,ver:user.version,cred:await credentialTag(user,env),exp:Math.floor(Date.now()/1000)+TTL,nonce:crypto.randomUUID()})));return p+'.'+b64(await crypto.subtle.sign('HMAC',await hmacKey(env),encoder.encode(p)));}
 async function identity(req,env){
   try{const value=(req.headers.get('Cookie')||'').split(';').map(s=>s.trim()).find(s=>s.startsWith(COOKIE+'='))?.slice(COOKIE.length+1);if(!value||value.length>2048)return null;
     const [payload,sig,extra]=value.split('.');if(extra||!payload||!sig)return null;
     if(!await crypto.subtle.verify('HMAC',await hmacKey(env),unb64(sig),encoder.encode(payload)))return null;
     const p=JSON.parse(new TextDecoder().decode(unb64(payload)));if(!Number.isFinite(p.exp)||p.exp<=Date.now()/1000)return null;
-    const user=(await accounts(env)).find(u=>u.login===p.sub&&u.version===p.ver);return user?{login:user.login,role:user.role,name:user.name}:null;
+    const user=(await accounts(env)).find(u=>u.login===p.sub&&u.version===p.ver);
+    if(!user||typeof p.cred!=='string'||!equal(p.cred,await credentialTag(user,env)))return null;
+    return {login:user.login,role:user.role,name:user.name};
   }catch{return null;}
 }
 function originAllowed(req){const origin=req.headers.get('Origin');return origin===new URL(req.url).origin;}
