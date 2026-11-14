@@ -14,7 +14,7 @@
 }
 .role-student{--accent:var(--violet);--accent-d:#5847b8;--accent-soft:var(--violet-soft)}
 .role-mentor{--accent:#0e8f86;--accent-d:#0b766f;--accent-soft:#e0f4f2}
-.role-admin{--accent:#475569;--accent-d:#334155;--accent-soft:#eef2f6}
+.role-admin{--accent:var(--blue);--accent-d:var(--blue-d);--accent-soft:var(--blue-soft);--teal:var(--accent);--mint:var(--accent-soft)}
 html{background:var(--bg)}
 body{background:var(--bg)!important;color:var(--ink);font-family:var(--font)!important;font-feature-settings:"cv11","ss01";-webkit-font-smoothing:antialiased;letter-spacing:-.005em}
 button,input,select,textarea{font-family:var(--font)!important}
